@@ -112,6 +112,49 @@ def cargar_datos(filepath):
         
     return df, anio
 
+@st.cache_data
+def generar_consolidado_historico():
+    """
+    Escanea TODOS los CSVs disponibles, extrae promedios por año, región y dependencia,
+    y retorna un DataFrame ligero consolidado.
+    """
+    archivos = sorted([f for f in glob.glob("*.csv") if not re.search(r"(Libro|Codigo|Anexo|requirement)", f, re.IGNORECASE)])
+    consolidado = []
+
+    for f in archivos:
+        anio = detectar_anio(f)
+        if anio == 0: continue
+        
+        try:
+            # Leemos solo columnas clave para velocidad
+            # Nota: Usamos engine='python' y on_bad_lines='skip' para ser tolerantes a fallos
+            df_temp = pd.read_csv(f, sep=None, engine='python') 
+            df_temp = homologar_columnas(df_temp)
+            df_temp = procesar_dependencia(df_temp, anio)
+            
+            # Variables a promediar (solo si existen)
+            cols_metricas = [c for c in ['MATEMATICA', 'LENGUAJE', 'NEM'] if c in df_temp.columns]
+            
+            if cols_metricas and 'Dependencia_Texto' in df_temp.columns:
+                # Agrupación 1: Nacional por Dependencia
+                grp_dep = df_temp.groupby('Dependencia_Texto')[cols_metricas].mean(numeric_only=True).reset_index()
+                grp_dep['Año'] = anio
+                grp_dep['Tipo'] = 'Nacional'
+                consolidado.append(grp_dep)
+                
+                # Agrupación 2: Regional (para el Heatmap)
+                if 'REGION' in df_temp.columns:
+                    grp_reg = df_temp.groupby('REGION')[cols_metricas].mean(numeric_only=True).reset_index()
+                    grp_reg['Año'] = anio
+                    grp_reg['Tipo'] = 'Regional'
+                    consolidado.append(grp_reg)
+                    
+        except Exception as e:
+            continue # Si un archivo falla, lo saltamos silenciosamente para no romper la app
+
+    if consolidado:
+        return pd.concat(consolidado, ignore_index=True)
+    return pd.DataFrame()
 # -----------------------------------------------------------------------------
 # 3. INTERFAZ DE CARGA (SIDEBAR GLOBAL)
 # -----------------------------------------------------------------------------
