@@ -155,6 +155,65 @@ def generar_consolidado_historico():
     if consolidado:
         return pd.concat(consolidado, ignore_index=True)
     return pd.DataFrame()
+
+@st.cache_data
+def generar_historia_rbd(lista_rbds):
+    """
+    Busca la historia específica de una lista de RBDs en todos los archivos.
+    Retorna dos DataFrames: 
+    1. La historia de los colegios solicitados.
+    2. Los promedios nacionales de referencia por año (para el benchmark).
+    """
+    archivos = sorted([f for f in glob.glob("*.csv") if not re.search(r"(Libro|Codigo|Anexo|requirement)", f, re.IGNORECASE)])
+    historia_colegios = []
+    referencia_nacional = []
+
+    for f in archivos:
+        anio = detectar_anio(f)
+        if anio == 0: continue
+        
+        try:
+            # 1. Leer Header para ver si tiene RBD
+            df_iter = pd.read_csv(f, sep=None, engine='python', nrows=5)
+            df_iter = homologar_columnas(df_iter)
+            
+            # Solo procesamos si el archivo tiene la columna RBD
+            if 'RBD' in df_iter.columns:
+                # Leer archivo completo
+                df = pd.read_csv(f, sep=None, engine='python')
+                df = homologar_columnas(df)
+                
+                # Calcular Referencia Nacional (Benchmark) de ese año
+                # Promedio simple de todos los alumnos (sin filtrar por RBD)
+                if 'MATEMATICA' in df.columns:
+                    prom_nac_mate = df['MATEMATICA'].mean()
+                    prom_nac_leng = df['LENGUAJE'].mean()
+                    referencia_nacional.append({
+                        'Año': anio, 
+                        'MATEMATICA': prom_nac_mate, 
+                        'LENGUAJE': prom_nac_leng,
+                        'Tipo': 'Promedio Nacional'
+                    })
+
+                # Filtrar nuestros colegios
+                df_rbd = df[df['RBD'].isin(lista_rbds)].copy()
+                
+                if not df_rbd.empty:
+                    # Agrupar por RBD y calcular promedios
+                    stats = df_rbd.groupby('RBD')[['MATEMATICA', 'LENGUAJE']].mean(numeric_only=True).reset_index()
+                    stats['Año'] = anio
+                    historia_colegios.append(stats)
+                    
+        except Exception:
+            continue
+            
+    df_main = pd.concat(historia_colegios, ignore_index=True) if historia_colegios else pd.DataFrame()
+    df_ref = pd.DataFrame(referencia_nacional) if referencia_nacional else pd.DataFrame()
+    
+    return df_main, df_ref
+
+
+
 # -----------------------------------------------------------------------------
 # 3. INTERFAZ DE CARGA (SIDEBAR GLOBAL)
 # -----------------------------------------------------------------------------
