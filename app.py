@@ -434,4 +434,72 @@ with tab2:
             
         else:
             st.info("No se encontró información regional suficiente para el mapa de calor.")
-with tab3: st.info("🚧 Pestaña por Colegio (RBD) en construcción...")
+
+
+
+
+
+# =============================================================================
+# PESTAÑA 3: FICHA POR COLEGIO (BENCHMARKING)
+# =============================================================================
+with tab3:
+    st.markdown("### 🏢 Análisis Competitivo por RBD")
+    st.info("Ingresa los RBDs para comparar su desempeño histórico frente al promedio nacional.")
+    
+    col_input, col_ops = st.columns([2, 1])
+    
+    with col_input:
+        # Input de texto flexible
+        rbd_str = st.text_input("Ingresa RBDs (separados por coma):", placeholder="Ej: 9001, 10230")
+    
+    with col_ops:
+        var_comp = st.selectbox("Variable a Comparar:", ["MATEMATICA", "LENGUAJE"], key="rbd_var")
+        
+    if rbd_str:
+        # Limpieza de input (string -> lista de ints)
+        try:
+            target_rbds = [int(x.strip()) for x in rbd_str.split(',') if x.strip().isdigit()]
+        except:
+            target_rbds = []
+            
+        if target_rbds:
+            with st.spinner(f"Buscando historial para {len(target_rbds)} colegios..."):
+                df_colegios, df_benchmark = generar_historia_rbd(target_rbds)
+            
+            if not df_colegios.empty:
+                # --- GRÁFICO PRINCIPAL ---
+                fig_bench, ax_bench = plt.subplots(figsize=(12, 6))
+                
+                # 1. Dibujar Benchmark (Línea gris de fondo)
+                if not df_benchmark.empty:
+                    sns.lineplot(data=df_benchmark, x='Año', y=var_comp, 
+                                 color='gray', linestyle='--', alpha=0.5, label='Promedio Nacional', ax=ax_bench)
+                
+                # 2. Dibujar Colegios (Líneas de color)
+                # Convertimos RBD a categórica (texto) para que el gráfico use colores distintos
+                df_colegios['RBD_Label'] = df_colegios['RBD'].astype(str)
+                sns.lineplot(data=df_colegios, x='Año', y=var_comp, hue='RBD_Label', 
+                             style='RBD_Label', markers=True, linewidth=3, palette="bright", ax=ax_bench)
+                
+                # Estética
+                ax_bench.set_title(f"Benchmarking Histórico: {var_comp}")
+                ax_bench.set_ylabel("Puntaje Promedio")
+                ax_bench.set_xlabel("Año")
+                ax_bench.grid(True, linestyle=':', alpha=0.6)
+                
+                # Línea divisoria PSU/PAES
+                plt.axvline(x=2022.5, color='red', linestyle=':', alpha=0.3)
+                plt.text(2022.6, df_colegios[var_comp].min(), 'Inicio PAES', color='red', fontsize=8)
+
+                st.pyplot(fig_bench)
+                
+                # --- TABLA DE DATOS ---
+                with st.expander("Ver Datos Tabulados"):
+                    # Pivoteamos para que sea legible (Año x RBD)
+                    tabla = df_colegios.pivot(index='Año', columns='RBD', values=var_comp)
+                    st.dataframe(tabla.style.highlight_max(axis=1, color='lightgreen').format("{:.1f}"))
+                    
+            else:
+                st.warning(f"⚠️ No se encontraron datos para los RBDs {target_rbds}. Puede que los archivos cargados sean muy antiguos (pre-2010 a menudo no traen RBD) o el código no existe.")
+        else:
+            st.error("Por favor ingresa números válidos.")
